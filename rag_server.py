@@ -23,8 +23,9 @@ from fastmcp.prompts.prompt import PromptMessage, TextContent
 import chromadb
 from chromadb.config import Settings
 
-# LlamaParse imports
+# LlamaParse and LlamaIndex imports
 from llama_parse import LlamaParse
+from llama_index.core import SimpleDirectoryReader
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -38,7 +39,7 @@ chroma_client = None
 collection = None
 
 def initialize_chromadb():
-    """Initialize ChromaDB client and collection"""
+    """Initialize ChromaDB client and collection, then auto-ingest files from data directory"""
     global chroma_client, collection
     
     try:
@@ -62,86 +63,112 @@ def initialize_chromadb():
         
         logger.info(f"ChromaDB initialized successfully. Collection has {collection.count()} documents.")
         
+        # Auto-ingest files from data directory
+        auto_ingest_files()
+        
     except Exception as e:
         logger.error(f"Failed to initialize ChromaDB: {e}")
         raise
 
-# Initialize ChromaDB on server startup
-initialize_chromadb()
-
-@mcp.tool
-def ingest_file(file_path: str, chunk_size: int = 5000, overlap: int = 800) -> str:
-    """
-    Ingest a document into the vector database for RAG using LlamaParse.
-    
-    Args:
-        file_path: Path to the document to ingest (supports PDF, DOCX, PPTX, TXT, etc.)
-        chunk_size: Size of text chunks (default: 5000 characters)
-        overlap: Overlap between chunks (default: 800 characters)
-    
-    Returns:
-        Status message indicating success or failure
-    """
+def auto_ingest_files():
+    """Automatically ingest all files from the data directory"""
     global collection
+    
     try:
-        # Validate file exists and is readable
-        path = Path(file_path)
-        if not path.exists():
-            return f"Error: File '{file_path}' does not exist."
+        # Create data directory if it doesn't exist
+        data_directory = "./data"
+        os.makedirs(data_directory, exist_ok=True)
         
-        if not path.is_file():
-            return f"Error: '{file_path}' is not a file."
+        # Check if data directory has any files
+        data_path = Path(data_directory)
+        files = list(data_path.glob("*"))
+        files = [f for f in files if f.is_file()]
         
-        # Get file extension to determine parsing method
-        file_extension = path.suffix.lower()
+        if not files:
+            logger.info("No files found in data directory. Skipping auto-ingestion.")
+            return
         
-        # Parse document content based on file type
-        if file_extension == '.txt' or file_extension == '.md':
-            # For plain text files, use direct reading
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                # Try with different encoding
-                with open(path, 'r', encoding='latin-1') as f:
-                    content = f.read()
+        logger.info(f"Found {len(files)} files in data directory. Starting auto-ingestion...")
+        
+        # Initialize LlamaParse for PDF and other document types
+        api_key = os.getenv("LLAMA_CLOUD_API_KEY")
+        if not api_key:
+            logger.warning("LLAMA_CLOUD_API_KEY not set. PDF parsing will be limited.")
+            parser = None
         else:
-            # For other file types (PDF, DOCX, PPTX, etc.), use LlamaParse
+            parser = LlamaParse(api_key=api_key, result_type="text")
+        
+        # Set up file extractors for different file types
+        file_extractor = {}
+        if parser:
+            file_extractor = {
+                ".pdf": parser,
+                ".docx": parser,
+                ".pptx": parser,
+                ".doc": parser,
+                ".ppt": parser
+            }
+        
+        # Use SimpleDirectoryReader to load all documents
+        documents = SimpleDirectoryReader(
+            input_dir=data_directory,
+            file_extractor=file_extractor,
+            recursive=True
+        ).load_data()
+        
+        if not documents:
+            logger.info("No documents loaded from data directory.")
+            return
+        
+        logger.info(f"Loaded {len(documents)} documents from data directory.")
+        
+        # Process and add documents to ChromaDB
+        for doc in documents:
             try:
-                # Check if LLAMA_CLOUD_API_KEY is set
-                api_key = os.getenv('LLAMA_CLOUD_API_KEY')
-                if not api_key:
-                    return "Error: LLAMA_CLOUD_API_KEY environment variable is required for parsing non-text files. Please set your LlamaCloud API key."
+                # Get document content and metadata
+                content = doc.text
+                metadata = doc.metadata or {}
+                id = doc.id_
                 
-                # Initialize LlamaParse
-                parser = LlamaParse(
-                    api_key=api_key,
-                    result_type="markdown",  # Get markdown output for better structure
-                    verbose=True
+                # Add file name to metadata if available
+                if hasattr(doc, 'metadata') and 'file_name' in doc.metadata:
+                    file_name = doc.metadata['file_name']
+                elif hasattr(doc, 'metadata') and 'file_path' in doc.metadata:
+                    file_name = Path(doc.metadata['file_path']).name
+                else:
+                    file_name = "unknown"
+                
+                metadata.update({
+                    "file_name": file_name,
+                    "ingestion_method": "auto_ingest",
+                    "chunk_size": len(content)
+                })
+                
+                # Generate unique ID for the document
+                doc_id = str(uuid.uuid4())
+                
+                # Add to ChromaDB collection
+                collection.add(
+                    documents=[content],
+                    metadatas=[metadata],
+                    ids=[id]
                 )
                 
-                documents = parser.load_data(path)
+                logger.info(f"Successfully ingested: {file_name}")
                 
-                logger.info(f"Successfully parsed {file_extension} file using LlamaParse")
-                
-            except Exception as parse_error:
-                return f"Error parsing file with LlamaParse: {str(parse_error)}. Make sure LLAMA_CLOUD_API_KEY is set correctly."
+            except Exception as e:
+                logger.error(f"Failed to ingest document: {e}")
+                continue
         
-        # Add chunks to ChromaDB collection
-        collection.add(
-            documents=[doc.text for doc in documents],
-            metadatas={"file_name": str(path)},
-            ids=[doc.id_ for doc in documents]
-        )
-        
-        parsing_method = "LlamaParse" if file_extension != '.txt' and file_extension != '.md' else "direct text reading"
-        logger.info(f"Successfully ingested {len(chunks)} chunks from '{file_path}' using {parsing_method}")
-        return f"Successfully ingested '{file_path}' into vector database using {parsing_method}. Created {len(chunks)} chunks."
+        final_count = collection.count()
+        logger.info(f"Auto-ingestion completed. Collection now has {final_count} documents.")
         
     except Exception as e:
-        error_msg = f"Error ingesting file '{file_path}': {str(e)}"
-        logger.error(error_msg)
-        return error_msg
+        logger.error(f"Failed during auto-ingestion: {e}")
+        # Don't raise here as we want the server to continue even if auto-ingestion fails
+
+# Initialize ChromaDB on server startup
+initialize_chromadb()
 
 @mcp.tool
 def query_documents(query: str, n_results: int = 5, include_metadata: bool = True) -> str:
