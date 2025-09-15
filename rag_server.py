@@ -23,6 +23,9 @@ from fastmcp.prompts.prompt import PromptMessage, TextContent
 import chromadb
 from chromadb.config import Settings
 
+# LlamaParse imports
+from llama_parse import LlamaParse
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -69,10 +72,10 @@ initialize_chromadb()
 @mcp.tool
 def ingest_file(file_path: str, chunk_size: int = 5000, overlap: int = 800) -> str:
     """
-    Ingest a text file into the vector database for RAG.
+    Ingest a document into the vector database for RAG using LlamaParse.
     
     Args:
-        file_path: Path to the text file to ingest
+        file_path: Path to the document to ingest (supports PDF, DOCX, PPTX, TXT, etc.)
         chunk_size: Size of text chunks (default: 5000 characters)
         overlap: Overlap between chunks (default: 800 characters)
     
@@ -89,55 +92,51 @@ def ingest_file(file_path: str, chunk_size: int = 5000, overlap: int = 800) -> s
         if not path.is_file():
             return f"Error: '{file_path}' is not a file."
         
-        # Read file content
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                content = f.read()
-        except UnicodeDecodeError:
-            # Try with different encoding
-            with open(path, 'r', encoding='latin-1') as f:
-                content = f.read()
+        # Get file extension to determine parsing method
+        file_extension = path.suffix.lower()
         
-        if not content.strip():
-            return f"Error: File '{file_path}' is empty."
-        
-        # Split content into chunks
-        chunks = []
-        start = 0
-        while start < len(content):
-            end = start + chunk_size
-            chunk = content[start:end]
-            
-            # Ensure we don't cut words in half
-            if end < len(content) and not content[end].isspace():
-                last_space = chunk.rfind(' ')
-                if last_space > start:
-                    end = start + last_space
-                    chunk = content[start:end]
-            
-            chunks.append(chunk.strip())
-            start = end - overlap
-        
-        # Generate unique IDs for chunks
-        chunk_ids = [f"{path.stem}_{i}_{uuid.uuid4().hex[:8]}" for i in range(len(chunks))]
-        
-        # Create metadata for each chunk
-        metadatas = [{
-            "source_file": str(path),
-            "chunk_index": i,
-            "total_chunks": len(chunks),
-            "chunk_size": len(chunk)
-        } for i, chunk in enumerate(chunks)]
+        # Parse document content based on file type
+        if file_extension == '.txt' or file_extension == '.md':
+            # For plain text files, use direct reading
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                # Try with different encoding
+                with open(path, 'r', encoding='latin-1') as f:
+                    content = f.read()
+        else:
+            # For other file types (PDF, DOCX, PPTX, etc.), use LlamaParse
+            try:
+                # Check if LLAMA_CLOUD_API_KEY is set
+                api_key = os.getenv('LLAMA_CLOUD_API_KEY')
+                if not api_key:
+                    return "Error: LLAMA_CLOUD_API_KEY environment variable is required for parsing non-text files. Please set your LlamaCloud API key."
+                
+                # Initialize LlamaParse
+                parser = LlamaParse(
+                    api_key=api_key,
+                    result_type="markdown",  # Get markdown output for better structure
+                    verbose=True
+                )
+                
+                documents = parser.load_data(path)
+                
+                logger.info(f"Successfully parsed {file_extension} file using LlamaParse")
+                
+            except Exception as parse_error:
+                return f"Error parsing file with LlamaParse: {str(parse_error)}. Make sure LLAMA_CLOUD_API_KEY is set correctly."
         
         # Add chunks to ChromaDB collection
         collection.add(
-            documents=chunks,
-            metadatas=metadatas,
-            ids=chunk_ids
+            documents=[doc.text for doc in documents],
+            metadatas={"file_name": str(path)},
+            ids=[doc.id_ for doc in documents]
         )
         
-        logger.info(f"Successfully ingested {len(chunks)} chunks from '{file_path}'")
-        return f"Successfully ingested '{file_path}' into vector database. Created {len(chunks)} chunks."
+        parsing_method = "LlamaParse" if file_extension != '.txt' and file_extension != '.md' else "direct text reading"
+        logger.info(f"Successfully ingested {len(chunks)} chunks from '{file_path}' using {parsing_method}")
+        return f"Successfully ingested '{file_path}' into vector database using {parsing_method}. Created {len(chunks)} chunks."
         
     except Exception as e:
         error_msg = f"Error ingesting file '{file_path}': {str(e)}"
