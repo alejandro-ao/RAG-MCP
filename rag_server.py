@@ -338,4 +338,4 @@ def rag_analysis_prompt(topic: str) -> PromptMessage:
 if __name__ == "__main__":
     # Run the MCP server
     logger.info("Starting RAG MCP Server...")
-    mcp.run()
+    mcp.run("stdio")
