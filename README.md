@@ -1,6 +1,6 @@
 # RAG MCP Server
 
-A **Retrieval Augmented Generation (RAG)** server built with [FastMCP](https://github.com/jlowin/fastmcp) <mcreference link="https://github.com/jlowin/fastmcp" index="1">1</mcreference> and [ChromaDB](https://docs.trychroma.com/) <mcreference link="https://docs.trychroma.com/docs/overview/getting-started" index="2">2</mcreference> that provides MCP (Model Context Protocol) tools for ingesting documents into a local vector database and retrieving relevant information based on queries.
+A **Retrieval Augmented Generation (RAG)** MCP server built with [FastMCP](https://github.com/jlowin/fastmcp) <mcreference link="https://github.com/jlowin/fastmcp" index="1">1</mcreference> and [ChromaDB](https://docs.trychroma.com/) <mcreference link="https://docs.trychroma.com/docs/overview/getting-started" index="2">2</mcreference> that provides MCP (Model Context Protocol) tools for ingesting documents into a local vector database and retrieving relevant information based on queries.
 
 ## Features
 
