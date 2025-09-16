@@ -8,9 +8,10 @@ A **Retrieval Augmented Generation (RAG)** MCP server built with [FastMCP](https
 - **`query_documents`**: Search for relevant documents using semantic similarity
 - **`list_ingested_files`**: View all files currently stored in the database
 - **`reingest_data_directory`**: Reingest all files from the data directory (useful to reindex contents when new files are added)
+- **`get_rag_status`**: Get comprehensive system information including server status, database configuration, data directory status, and environment variables
 
 ### 📊 **Resources**
-- **`rag://status`**: Get real-time status of the RAG system including document count and configuration
+- None currently available
 
 ### 💬 **Prompts**
 - **`rag_analysis_prompt`**: Generate structured prompts for analyzing documents on specific topics

@@ -419,29 +419,111 @@ def reingest_data_directory() -> str:
         logger.error(error_msg)
         return error_msg
 
-@mcp.resource("rag://status")
+@mcp.tool()
 def get_rag_status() -> Dict[str, Any]:
     """
-    Get the current status of the RAG system.
+    Get comprehensive status information about the RAG system.
+    
+    Returns comprehensive information about the RAG system including:
+    - System status (server state, database initialization, document count)
+    - Database configuration (type, directory, collection details)
+    - Data directory status (path, existence, configuration source)
+    - Environment variables (with sensitive values redacted)
+    - Configuration priority documentation
     
     Returns:
-        Dictionary with system status information
+        Dictionary with comprehensive system status information
     """
-    global collection
+    global collection, chroma_client
     try:
         doc_count = collection.count() if collection else 0
         
+        # Get actual database directory being used
+        db_directory = get_database_directory()
+        
+        # Get data directory configuration status
+        data_directory_status = {}
+        try:
+            data_directory = get_data_directory()
+            data_directory_status = {
+                "path": str(data_directory),
+                "exists": data_directory.exists(),
+                "configured": True,
+                "source": "environment" if os.getenv('LLAMA_RAG_DATA_DIR') else "workspace"
+            }
+        except ValueError as e:
+            data_directory_status = {
+                "path": None,
+                "exists": False,
+                "configured": False,
+                "error": str(e),
+                "source": "none"
+            }
+        
+        # Environment variable status
+        env_vars = {
+            "LLAMA_RAG_DATA_DIR": {
+                "set": bool(os.getenv('LLAMA_RAG_DATA_DIR')),
+                "value": os.getenv('LLAMA_RAG_DATA_DIR')
+            },
+            "LLAMA_RAG_DB_DIR": {
+                "set": bool(os.getenv('LLAMA_RAG_DB_DIR')),
+                "value": os.getenv('LLAMA_RAG_DB_DIR')
+            },
+            "LLAMA_CLOUD_API_KEY": {
+                "set": bool(os.getenv('LLAMA_CLOUD_API_KEY')),
+                "value": "[REDACTED]" if os.getenv('LLAMA_CLOUD_API_KEY') else None
+            }
+        }
+        
+        # Database configuration
+        db_config = {
+            "type": "ChromaDB",
+            "directory": str(db_directory),
+            "exists": db_directory.exists(),
+            "collection_name": "rag_documents",
+            "source": "environment" if os.getenv('LLAMA_RAG_DB_DIR') else "standard"
+        }
+        
+        # System status
+        system_status = {
+            "server_active": True,
+            "database_initialized": chroma_client is not None,
+            "collection_ready": collection is not None,
+            "total_documents": doc_count,
+            "auto_ingestion_enabled": data_directory_status["configured"]
+        }
+        
         return {
             "status": "active",
-            "database_type": "ChromaDB",
-            "total_documents": doc_count,
-            "collection_name": "rag_documents",
-            "persist_directory": "./chroma_db"
+            "system": system_status,
+            "database": db_config,
+            "data_directory": data_directory_status,
+            "environment_variables": env_vars,
+            "configuration": {
+                "data_dir_priority": [
+                    "LLAMA_RAG_DATA_DIR environment variable",
+                    "./data in current working directory",
+                    "Error if neither found"
+                ],
+                "db_dir_priority": [
+                    "LLAMA_RAG_DB_DIR environment variable",
+                    "~/.local/share/rag-server (XDG standard)",
+                    "./chroma in current working directory"
+                ]
+            }
         }
     except Exception as e:
         return {
             "status": "error",
-            "error": str(e)
+            "error": str(e),
+            "system": {
+                "server_active": True,
+                "database_initialized": False,
+                "collection_ready": False,
+                "total_documents": 0,
+                "auto_ingestion_enabled": False
+            }
         }
 
 @mcp.prompt
