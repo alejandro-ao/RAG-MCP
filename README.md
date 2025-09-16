@@ -5,10 +5,9 @@ A **Retrieval Augmented Generation (RAG)** MCP server built with [FastMCP](https
 ## Features
 
 ### 🔧 **Tools**
-- **`ingest_file`**: Ingest text files into the vector database with configurable chunking
 - **`query_documents`**: Search for relevant documents using semantic similarity
 - **`list_ingested_files`**: View all files currently stored in the database
-- **`clear_database`**: Remove all documents from the vector database
+- **`reingest_data_directory`**: Reingest all files from the data directory (useful to reindex contents when new files are added)
 
 ### 📊 **Resources**
 - **`rag://status`**: Get real-time status of the RAG system including document count and configuration

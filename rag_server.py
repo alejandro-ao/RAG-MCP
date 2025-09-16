@@ -9,6 +9,7 @@ This server provides tools for:
 
 import os
 import logging
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import uuid
@@ -300,31 +301,43 @@ def list_ingested_files() -> str:
         return error_msg
 
 @mcp.tool
-def clear_database() -> str:
+def reingest_data_directory() -> str:
     """
-    Clear all documents from the vector database.
+    Reingest all files from the data directory into the vector database.
+    
+    This tool clears the existing database and reprocesses all files in the data directory,
+    which is useful to reindex the contents when new files have been added to the data directory
+    or when you want to refresh the entire database with the latest file contents.
     
     Returns:
-        Status message indicating success or failure
+        Status message indicating success or failure with details about ingested files
     """
-    global collection, chroma_client
+    global collection
     try:
-        # Get count before clearing
-        count_before = collection.count()
+        if not collection:
+            return "Error: Database is not initialized."
         
-        # Delete the collection and recreate it
-        chroma_client.delete_collection("rag_documents")
-        
+        # First, clear the existing database
+        logger.info("Clearing existing database before reingestion...")
+        chroma_client.delete_collection(name="rag_documents")
         collection = chroma_client.create_collection(
             name="rag_documents",
             metadata={"description": "Collection for RAG document storage"}
         )
         
-        logger.info(f"Cleared {count_before} documents from the database")
-        return f"Successfully cleared {count_before} documents from the vector database."
+        # Now reingest all files from data directory
+        logger.info("Starting reingestion of data directory...")
+        auto_ingest_files()
+        
+        # Get final count
+        final_count = collection.count()
+        
+        success_msg = f"Successfully reingested data directory. Database now contains {final_count} documents."
+        logger.info(success_msg)
+        return success_msg
         
     except Exception as e:
-        error_msg = f"Error clearing database: {str(e)}"
+        error_msg = f"Error during reingestion: {str(e)}"
         logger.error(error_msg)
         return error_msg
 
