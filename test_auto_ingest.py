@@ -64,7 +64,9 @@ def test_auto_ingest():
 def check_data_directory():
     """Check what files are in the data directory"""
     print("📁 Checking data directory contents...")
-    data_dir = Path("./data")
+    # Import get_data_directory function from rag_server
+    from rag_server import get_data_directory
+    data_dir = get_data_directory()
     
     if not data_dir.exists():
         print("❌ Data directory doesn't exist")

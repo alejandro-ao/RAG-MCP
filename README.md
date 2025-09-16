@@ -44,6 +44,57 @@ fastmcp dev rag_server.py
 python test_rag_server.py
 ```
 
+## Directory Configuration
+
+The server supports flexible configuration for both data and database directories through environment variables:
+
+### Data Directory Configuration:
+**Priority Order:**
+1. `LLAMA_RAG_DATA_DIR` environment variable (highest priority)
+2. `./data` in current working directory (workspace-relative)
+3. **Error**: If neither is found, the server will log an error and skip auto-ingestion
+
+**Important**: Unlike the database directory, the data directory requires explicit configuration. If no data directory is found, the server will:
+- Log a clear error message with setup instructions
+- Skip auto-ingestion (server will still start successfully)
+- Require manual configuration before documents can be ingested
+
+### Database Directory Configuration:
+**Priority Order:**
+1. `LLAMA_RAG_DB_DIR` environment variable (highest priority)
+2. `~/.local/share/rag-server` (XDG Base Directory standard)
+3. `./chroma` relative to current working directory (fallback)
+
+### Usage Examples:
+```bash
+# Using environment variable (recommended)
+export LLAMA_RAG_DATA_DIR=/path/to/your/documents
+python rag_server.py
+
+# Using current directory data folder
+mkdir data
+cp your_documents/* data/
+python rag_server.py
+
+# Error case - no configuration
+# Server starts but logs: "No data directory found. Please either..."
+python rag_server.py
+
+# Use custom database directory only
+LLAMA_RAG_DB_DIR=/path/to/your/database python rag_server.py
+
+# Use both custom directories
+LLAMA_RAG_DATA_DIR=~/Documents/rag-data LLAMA_RAG_DB_DIR=~/Documents/rag-db python rag_server.py
+```
+
+### Testing:
+```bash
+# Test with temporary directories
+LLAMA_RAG_DATA_DIR=/tmp/test_data LLAMA_RAG_DB_DIR=/tmp/test_db python rag_server.py
+```
+
+For detailed configuration options, see [DATA_DIRECTORY_CONFIG.md](DATA_DIRECTORY_CONFIG.md).
+
 ## Usage Examples
 
 ### Ingesting Documents

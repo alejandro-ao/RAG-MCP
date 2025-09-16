@@ -45,14 +45,14 @@ def initialize_chromadb():
     global chroma_client, collection
     
     try:
-        # Create persistent ChromaDB client
-        persist_directory = "./chroma"
-        safe_reset_chromadb(chroma_path=persist_directory)
+        # Get database directory using flexible resolution
+        persist_directory = get_database_directory()
+        safe_reset_chromadb(chroma_path=str(persist_directory))
         
         os.makedirs(persist_directory, exist_ok=True)
         
         chroma_client = chromadb.PersistentClient(
-            path=persist_directory,
+            path=str(persist_directory),
             settings=Settings(
                 anonymized_telemetry=False,
                 allow_reset=True
@@ -74,17 +74,91 @@ def initialize_chromadb():
         logger.error(f"Failed to initialize ChromaDB: {e}")
         raise
 
+def get_database_directory():
+    """Get the ChromaDB persistent directory path with flexible resolution strategy.
+    
+    Priority order:
+    1. LLAMA_RAG_DB_DIR environment variable (user-specified)
+    2. ~/.local/share/rag-server (XDG Base Directory standard)
+    3. ./chroma relative to current working directory (fallback)
+    
+    Returns:
+        Path: Resolved database directory path
+    """
+    # 1. Check environment variable first
+    env_db_dir = os.getenv('LLAMA_RAG_DB_DIR')
+    if env_db_dir:
+        db_path = Path(env_db_dir).expanduser().resolve()
+        logger.info(f"Using database directory from LLAMA_RAG_DB_DIR: {db_path}")
+        return db_path
+    
+    # 2. Use XDG Base Directory standard (~/.local/share/rag-server)
+    try:
+        home_dir = Path.home()
+        xdg_data_home = os.getenv('XDG_DATA_HOME', home_dir / '.local' / 'share')
+        standard_db = Path(xdg_data_home) / 'rag-server'
+        logger.info(f"Using standard database directory: {standard_db}")
+        return standard_db
+    except Exception as e:
+        logger.warning(f"Could not access standard database directory: {e}")
+    
+    # 3. Fallback to server-relative ./chroma
+    fallback_db = Path('./chroma')
+    logger.info(f"Using fallback database directory: {fallback_db.resolve()}")
+    return fallback_db
+
+def get_data_directory():
+    """Get the data directory path with flexible resolution strategy.
+    
+    Priority order:
+    1. LLAMA_RAG_DATA_DIR environment variable (user-specified)
+    2. ./data in current working directory (workspace-relative)
+    
+    3. Raise error if no environment variable and no existing data directory
+    
+    Returns:
+        Path: Resolved data directory path
+        
+    Raises:
+        ValueError: If no environment variable is set and no data directory exists
+    """
+    # 1. Check environment variable first
+    env_data_dir = os.getenv('LLAMA_RAG_DATA_DIR')
+    if env_data_dir:
+        data_path = Path(env_data_dir).expanduser().resolve()
+        logger.info(f"Using data directory from LLAMA_RAG_DATA_DIR: {data_path}")
+        return data_path
+    
+    # 2. Try workspace-relative ./data (current working directory)
+    cwd_data = Path.cwd() / 'data'
+    if cwd_data.exists():
+        logger.info(f"Using workspace-relative data directory: {cwd_data}")
+        return cwd_data
+    
+    # 3. No environment variable and no existing data directory - raise error
+    error_msg = (
+        "No data directory found. Please either:\n"
+        "1. Set the LLAMA_RAG_DATA_DIR environment variable to specify a data directory, or\n"
+        "2. Create a 'data' directory in the current working directory\n\n"
+        "Examples:\n"
+        "  export LLAMA_RAG_DATA_DIR=/path/to/your/documents\n"
+        "  mkdir data  # Create data directory in current location"
+    )
+    logger.error(error_msg)
+    raise ValueError(error_msg)
+
 def auto_ingest_files():
     """Automatically ingest all files from the data directory"""
     global collection
     
     try:
+        # Get data directory using flexible resolution
+        data_path = get_data_directory()
+        
         # Create data directory if it doesn't exist
-        data_directory = "./data"
-        os.makedirs(data_directory, exist_ok=True)
+        os.makedirs(data_path, exist_ok=True)
         
         # Check if data directory has any files
-        data_path = Path(data_directory)
         files = list(data_path.glob("*"))
         files = [f for f in files if f.is_file()]
         
@@ -115,7 +189,7 @@ def auto_ingest_files():
         
         # Use SimpleDirectoryReader to load all documents
         documents = SimpleDirectoryReader(
-            input_dir=data_directory,
+            input_dir=str(data_path),
             file_extractor=file_extractor,
             recursive=True
         ).load_data()
@@ -164,6 +238,10 @@ def auto_ingest_files():
         final_count = collection.count()
         logger.info(f"Auto-ingestion completed. Collection now has {final_count} documents.")
         
+    except ValueError as e:
+        # Data directory configuration error - log and skip auto-ingestion
+        logger.warning(f"Skipping auto-ingestion: {e}")
+        return
     except Exception as e:
         logger.error(f"Failed during auto-ingestion: {e}")
         # Don't raise here as we want the server to continue even if auto-ingestion fails
