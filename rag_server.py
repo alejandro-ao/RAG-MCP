@@ -9,10 +9,8 @@ This server provides tools for:
 
 import os
 import logging
-import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-import uuid
+from typing import Dict, Any
 from textwrap import dedent
 
 
@@ -80,10 +78,12 @@ def get_database_directory():
     Priority order:
     1. LLAMA_RAG_DB_DIR environment variable (user-specified)
     2. ~/.local/share/rag-server (XDG Base Directory standard)
-    3. ./chroma relative to current working directory (fallback)
     
     Returns:
         Path: Resolved database directory path
+        
+    Raises:
+        ValueError: If no environment variable is set and XDG directory is not accessible
     """
     # 1. Check environment variable first
     env_db_dir = os.getenv('LLAMA_RAG_DB_DIR')
@@ -102,10 +102,17 @@ def get_database_directory():
     except Exception as e:
         logger.warning(f"Could not access standard database directory: {e}")
     
-    # 3. Fallback to server-relative ./chroma
-    fallback_db = Path('./chroma')
-    logger.info(f"Using fallback database directory: {fallback_db.resolve()}")
-    return fallback_db
+    # 3. No environment variable and no accessible XDG directory - raise error
+    error_msg = (
+        "No database directory found. Please either:\n"
+        "1. Set the LLAMA_RAG_DB_DIR environment variable to specify a database directory, or\n"
+        "2. Ensure the XDG Base Directory standard location is accessible\n\n"
+        "Examples:\n"
+        "  export LLAMA_RAG_DB_DIR=/path/to/your/database\n"
+        "  # Or ensure ~/.local/share is accessible for XDG standard"
+    )
+    logger.error(error_msg)
+    raise ValueError(error_msg)
 
 def get_data_directory():
     """Get the data directory path with flexible resolution strategy.
@@ -281,7 +288,7 @@ def query_documents(query: str, n_results: int = 5, include_metadata: bool = Tru
     
     Args:
         query: The search query
-        n_results: Number of results to return (default: 5)
+        n_results: Number of results to return (default: 5, min: 5, max: 20)
         include_metadata: Whether to include metadata in results (default: True)
     
     Returns:
