@@ -147,6 +147,31 @@ def get_data_directory():
     logger.error(error_msg)
     raise ValueError(error_msg)
 
+def check_data_directory_configured() -> tuple[bool, str]:
+    """Check if data directory is properly configured.
+    
+    Returns:
+        tuple: (is_configured, message)
+            - is_configured: True if data directory is available, False otherwise
+            - message: Informative message about the status
+    """
+    try:
+        data_path = get_data_directory()
+        return True, f"Data directory configured: {data_path}"
+    except ValueError:
+        message = (
+            "No data directory is configured for this RAG system. "
+            "The system cannot access any documents without a data directory.\n\n"
+            "To set up a data directory, you can:\n"
+            "1. Set the LLAMA_RAG_DATA_DIR environment variable:\n"
+            "   export LLAMA_RAG_DATA_DIR=/path/to/your/documents\n"
+            "2. Create a 'data' directory in the current working directory:\n"
+            "   mkdir data\n\n"
+            "After setting up the data directory, add your documents to it and restart the server "
+            "or use the reingest_data_directory tool to load them."
+        )
+        return False, message
+
 def auto_ingest_files():
     """Automatically ingest all files from the data directory"""
     global collection
@@ -264,6 +289,11 @@ def query_documents(query: str, n_results: int = 5, include_metadata: bool = Tru
     """
     global collection
     try:
+        # Check if data directory is configured
+        is_configured, config_message = check_data_directory_configured()
+        if not is_configured:
+            return config_message
+        
         if not query.strip():
             return "Error: Query cannot be empty."
         
@@ -321,6 +351,11 @@ def list_ingested_files() -> str:
     """
     global collection
     try:
+        # Check if data directory is configured
+        is_configured, config_message = check_data_directory_configured()
+        if not is_configured:
+            return config_message
+        
         # Get all documents with metadata
         all_docs = collection.get(include=["metadatas"])
         
@@ -392,6 +427,11 @@ def reingest_data_directory() -> str:
     """
     global collection
     try:
+        # Check if data directory is configured
+        is_configured, config_message = check_data_directory_configured()
+        if not is_configured:
+            return config_message
+        
         if not collection:
             return "Error: Database is not initialized."
         
