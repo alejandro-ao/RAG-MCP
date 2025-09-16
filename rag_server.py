@@ -22,6 +22,7 @@ from fastmcp.prompts.prompt import PromptMessage, TextContent
 # ChromaDB imports
 import chromadb
 from chromadb.config import Settings
+from chromadb_utils import safe_reset_chromadb
 
 # LlamaParse and LlamaIndex imports
 from llama_parse import LlamaParse
@@ -32,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Initialize FastMCP server with RAG capabilities
-mcp = FastMCP("RAG Server", dependencies=["chromadb", "sentence-transformers"])
+mcp = FastMCP("RAG Server")
 
 # Global ChromaDB client and collection
 chroma_client = None
@@ -44,7 +45,9 @@ def initialize_chromadb():
     
     try:
         # Create persistent ChromaDB client
-        persist_directory = "./chroma_db"
+        persist_directory = "./chroma"
+        safe_reset_chromadb(chroma_path=persist_directory)
+        
         os.makedirs(persist_directory, exist_ok=True)
         
         chroma_client = chromadb.PersistentClient(
@@ -55,13 +58,13 @@ def initialize_chromadb():
             )
         )
         
-        # Get or create collection for RAG documents
-        collection = chroma_client.get_or_create_collection(
+        # Create fresh collection for RAG documents
+        collection = chroma_client.create_collection(
             name="rag_documents",
             metadata={"description": "Collection for RAG document storage"}
         )
         
-        logger.info(f"ChromaDB initialized successfully. Collection has {collection.count()} documents.")
+        logger.info(f"ChromaDB initialized successfully. Vector database has {collection.count()} documents.")
         
         # Auto-ingest files from data directory
         auto_ingest_files()
@@ -143,9 +146,6 @@ def auto_ingest_files():
                     "ingestion_method": "auto_ingest",
                     "chunk_size": len(content)
                 })
-                
-                # Generate unique ID for the document
-                doc_id = str(uuid.uuid4())
                 
                 # Add to ChromaDB collection
                 collection.add(
@@ -248,29 +248,49 @@ def list_ingested_files() -> str:
         if not all_docs["metadatas"]:
             return "No files have been ingested yet."
         
-        # Group by source file
+        # Group by file name and path
         file_info = {}
         for metadata in all_docs["metadatas"]:
-            if metadata and "source_file" in metadata:
-                source_file = metadata["source_file"]
-                if source_file not in file_info:
-                    file_info[source_file] = {
-                        "total_chunks": metadata.get("total_chunks", 0),
-                        "chunks_found": 0
+            if metadata and "file_name" in metadata:
+                file_name = metadata["file_name"]
+                file_path = metadata.get("file_path", "Unknown path")
+                file_key = f"{file_name} ({file_path})"
+                
+                if file_key not in file_info:
+                    file_info[file_key] = {
+                        "file_name": file_name,
+                        "file_path": file_path,
+                        "file_type": metadata.get("file_type", "Unknown"),
+                        "file_size": metadata.get("file_size", 0),
+                        "creation_date": metadata.get("creation_date", "Unknown"),
+                        "last_modified_date": metadata.get("last_modified_date", "Unknown"),
+                        "ingestion_method": metadata.get("ingestion_method", "Unknown"),
+                        "chunks_found": 0,
+                        "total_chunk_size": 0
                     }
-                file_info[source_file]["chunks_found"] += 1
+                file_info[file_key]["chunks_found"] += 1
+                file_info[file_key]["total_chunk_size"] += metadata.get("chunk_size", 0)
         
         if not file_info:
             return "No files have been ingested yet."
         
         # Format response
         response = f"Ingested Files ({len(file_info)} total):\n\n"
-        for i, (file_path, info) in enumerate(file_info.items(), 1):
-            response += f"{i}. {file_path}\n"
-            response += f"   Chunks: {info['chunks_found']}/{info['total_chunks']}\n\n"
+        for i, (file_key, info) in enumerate(file_info.items(), 1):
+            response += f"{i}. {info['file_name']}\n"
+            response += f"   Path: {info['file_path']}\n"
+            response += f"   Type: {info['file_type']}\n"
+            response += f"   Size: {info['file_size']:,} bytes\n"
+            response += f"   Created: {info['creation_date']}\n"
+            response += f"   Modified: {info['last_modified_date']}\n"
+            response += f"   Chunks: {info['chunks_found']}\n"
+            response += f"   Total chunk size: {info['total_chunk_size']:,} characters\n"
+            response += f"   Ingestion method: {info['ingestion_method']}\n\n"
         
         total_chunks = sum(info["chunks_found"] for info in file_info.values())
-        response += f"Total chunks in database: {total_chunks}"
+        total_chunk_size = sum(info["total_chunk_size"] for info in file_info.values())
+        response += f"Total chunks in database: {total_chunks}\n"
+        response += f"Total content size: {total_chunk_size:,} characters"
         
         return response
         
