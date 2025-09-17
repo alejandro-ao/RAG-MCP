@@ -284,7 +284,26 @@ initialize_chromadb()
 @mcp.tool
 def query_documents(query: str, n_results: int = 5, include_metadata: bool = True) -> str:
     """
-    Query the vector database to retrieve relevant documents.
+    Query the local document knowledge base (vector database) to retrieve relevant information based on your search query.
+    
+    This tool allows you to search through all documents that have been ingested into the system's vector database.
+    It uses semantic search to find the most relevant text passages that match your query, going beyond simple
+    keyword matching to understand the meaning and context of your search.
+    
+    The tool is particularly useful for:
+    - Finding specific information across multiple documents
+    - Discovering connections between different pieces of content
+    - Getting quick access to relevant passages without reading entire documents
+    - Verifying facts or finding supporting evidence in your document collection
+    
+    Each result includes:
+    - The relevant text passage
+    - Source document information
+    - Similarity score showing how well it matches your query
+    - Additional metadata about the document chunk
+    
+    You can control the number of results returned and whether to include detailed metadata
+    in the response.
     
     Args:
         query: The search query
@@ -351,10 +370,17 @@ def query_documents(query: str, n_results: int = 5, include_metadata: bool = Tru
 @mcp.tool
 def list_ingested_files() -> str:
     """
-    List all files that have been ingested into the vector database.
-    
-    Returns:
-        Formatted string with information about ingested files
+    Provides a comprehensive list of all files that have been successfully ingested into the vector database.
+
+    This tool is useful for:
+    - Verifying which files are included in the knowledge base.
+    - Checking the metadata of each file, such as file type, size, and ingestion date.
+    - Understanding how documents are chunked and stored in the database.
+
+    The output includes:
+    - A summary of each ingested file with its path, type, size, and modification dates.
+    - The number of chunks each file has been divided into.
+    - The total size of the content stored in the database.
     """
     global collection
     try:
@@ -423,14 +449,18 @@ def list_ingested_files() -> str:
 @mcp.tool
 def reingest_data_directory() -> str:
     """
-    Reingest all files from the data directory into the vector database.
-    
-    This tool clears the existing database and reprocesses all files in the data directory,
-    which is useful to reindex the contents when new files have been added to the data directory
-    or when you want to refresh the entire database with the latest file contents.
-    
+    Performs a complete re-ingestion of all files from the configured data directory into the vector database.
+
+    This tool first clears the existing database of all documents and then processes all files in the data directory from scratch.
+    It is particularly useful when:
+    - New files have been added to the data directory and need to be included in the knowledge base.
+    - Existing files have been updated and their contents need to be re-indexed.
+    - You want to ensure the vector database is in a clean, consistent state with the latest file versions.
+
+    The process is atomic; it completely replaces the old database with a new one.
+
     Returns:
-        Status message indicating success or failure with details about ingested files
+        A status message indicating the success or failure of the re-ingestion process, including the final document count.
     """
     global collection
     try:
@@ -469,17 +499,20 @@ def reingest_data_directory() -> str:
 @mcp.tool()
 def get_rag_status() -> Dict[str, Any]:
     """
-    Get comprehensive status information about the RAG system.
-    
-    Returns comprehensive information about the RAG system including:
-    - System status (server state, database initialization, document count)
-    - Database configuration (type, directory, collection details)
-    - Data directory status (path, existence, configuration source)
-    - Environment variables (with sensitive values redacted)
-    - Configuration priority documentation
-    
-    Returns:
-        Dictionary with comprehensive system status information
+    Provides a comprehensive overview of the RAG system's status and configuration.
+
+    This tool is essential for diagnosing issues and understanding the current state of the system.
+    It returns a detailed report including:
+    - System Status: Whether the server is active, the database is initialized, and the total number of documents.
+    - Database Configuration: The type of database, its storage directory, and collection details.
+    - Data Directory: The path to the data directory, whether it exists, and how it's configured.
+    - Environment Variables: The status of relevant environment variables (e.g., API keys, custom paths).
+    - Configuration Priority: The order in which the system looks for configuration settings.
+
+    This tool helps you to:
+    - Verify that the system is running correctly.
+    - Debug configuration problems related to data and database directories.
+    - Check which environment variables are being used.
     """
     global collection, chroma_client
     try:
@@ -574,18 +607,13 @@ def get_rag_status() -> Dict[str, Any]:
         }
 
 @mcp.prompt
-def rag_analysis_prompt(topic: str) -> PromptMessage:
+def rag_analysis_prompt() -> PromptMessage:
     """
-    Generate a prompt for analyzing documents related to a specific topic.
-    
-    Args:
-        topic: The topic to analyze
-    
-    Returns:
-        PromptMessage for RAG analysis
+    Generates a sophisticated prompt to guide the AI in performing an in-depth analysis 
+    of documents related to a specific topic.
     """
-    text = dedent(f"""
-      Please analyze the documents in the RAG database related to '{topic}'. 
+    text = dedent("""
+      Please analyze the documents in the RAG database. 
 
       First, query the database for relevant information about this topic, then provide:
       1. A comprehensive summary of the key points
@@ -593,7 +621,8 @@ def rag_analysis_prompt(topic: str) -> PromptMessage:
       3. Potential areas for further investigation
       4. Sources and references from the retrieved documents
 
-      Use the query_documents tool to search for information about '{topic}' and base your analysis on the retrieved content.
+      Use the query_documents tool to search for information and base your analysis on 
+      the retrieved content.
       """)
     
     return PromptMessage(
