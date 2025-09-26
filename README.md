@@ -2,6 +2,24 @@
 
 A **Retrieval Augmented Generation (RAG)** MCP server built with [FastMCP](https://github.com/jlowin/fastmcp) <mcreference link="https://github.com/jlowin/fastmcp" index="1">1</mcreference> and [ChromaDB](https://docs.trychroma.com/) <mcreference link="https://docs.trychroma.com/docs/overview/getting-started" index="2">2</mcreference> that provides MCP (Model Context Protocol) tools for ingesting documents into a local vector database and retrieving relevant information based on queries.
 
+This server uses [LlamaParse](https://github.com/run-llama/llama_parse) for parsing and extracting text from various file formats, including PDFs, Word documents, and PowerPoints. This allows for easy and efficient ETL (Extract, Transform, Load) of your documents into the vector database.
+
+**Note:** To use LlamaParse for parsing documents, you will need a LlamaParse API key. You can get one from the [LlamaParse website](https://cloud.llamaindex.ai/parse).
+
+## How it Works
+
+The server automatically ingests files at startup from a designated data directory. Here's a breakdown of the process:
+
+1.  **File Ingestion:** When the server starts, it looks for files in the data directory.
+2.  **Parsing with LlamaParse:** If a `LLAMA_CLOUD_API_KEY` is set, the server uses LlamaParse to extract text from supported file types (`.pdf`, `.docx`, `.pptx`, etc.). If the key is not set, parsing will be limited.
+3.  **Vectorization:** The extracted text is then converted into vector embeddings.
+4.  **Database Persistence:** These embeddings are stored in a local ChromaDB database, which is persisted on disk.
+
+### File Locations
+
+*   **Data Directory:** Files to be ingested should be placed in a `data` directory in the project's root, or a custom path can be specified using the `LLAMA_RAG_DATA_DIR` environment variable.
+*   **Database Directory:** The ChromaDB database is persisted in `~/.local/share/rag-server` by default, but this can be overridden with the `LLAMA_RAG_DB_DIR` environment variable.
+
 ## Features
 
 ### 🔧 **Tools**
@@ -20,29 +38,46 @@ A **Retrieval Augmented Generation (RAG)** MCP server built with [FastMCP](https
 
 ### 1. Installation
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+The recommended way to install and manage dependencies is with [uv](https://github.com/astral-sh/uv). <mcreference link="https://github.com/astral-sh/uv" index="5">5</mcreference>
 
-# Or install manually
-pip install fastmcp chromadb sentence-transformers
+If you don't have `uv` installed, you can install it with:
+
+```bash
+# On macOS and Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# On Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Once `uv` is installed, you can sync the dependencies:
+
+```bash
+# Create a virtual environment and install dependencies
+uv sync
+```
+
+Alternatively, you can still use `pip`:
+
+```bash
+# Install dependencies with pip
+pip install -r requirements.txt
 ```
 
 ### 2. Run the Server
 
+Once the dependencies are installed, you can run the server:
+
 ```bash
 # Start the MCP server
-python rag_server.py
-
-# Or use FastMCP CLI for development with inspector
-fastmcp dev rag_server.py
+python src/main.py
 ```
 
 ### 3. Test the Server
 
 ```bash
 # Run the test suite
-python test_rag_server.py
+python tests/test_rag_server.py
 ```
 
 ## Directory Configuration
